@@ -1,0 +1,294 @@
+openapi: 3.0.3
+
+info:
+  title: Habit API
+  version: 1.0.0
+  description: |
+    Учебный REST-сервис трекера привычек.
+
+    Контракт — источник истины: серверный каркас генерируется из этого файла
+    командой `openapi-generator-cli generate -g spring`, рукописный код
+    реализует сгенерированные интерфейсы.
+
+    Хранение — в памяти процесса, аутентификация — статический набор
+    Bearer-токенов. Данные теряются при перезапуске сервиса.
+
+    Все операции требуют заголовок `Authorization: Bearer <token>`:
+    `demo-token` действует от имени владельца `demo-user`,
+    `other-token` — от имени `other-user`. Привычки одного владельца
+    недоступны другому: такие запросы получают ответ 403.
+servers:
+  - url: http://localhost:8080
+    description: Локальный запуск Spring Boot
+
+tags:
+  - name: habits
+    description: Привычки текущего владельца
+
+security:
+  - bearerAuth: []
+
+paths:
+  /habits:
+    get:
+      tags:
+        - habits
+      operationId: listHabits
+      summary: Список привычек
+      description: |
+        Возвращает привычки вызывающего владельца. Необязательный параметр
+        `active` оставляет только активные (`true`) или только неактивные
+        (`false`) привычки. Пустая коллекция — это ответ 200 с пустым `items`.
+      parameters:
+        - name: active
+          in: query
+          required: false
+          description: Фильтр по признаку активности; если не передан, возвращаются все привычки.
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Коллекция привычек владельца.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HabitListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags:
+        - habits
+      operationId: createHabit
+      summary: Создание привычки
+      description: |
+        Создаёт привычку из `HabitInput` и возвращает её с присвоенными
+        полями: `id`, `ownerId`, `createdAt`, `updatedAt`. Если `active`
+        не передан, привычка создаётся активной. Владелец определяется
+        предъявленным токеном.
+      requestBody:
+        required: true
+        description: Данные новой привычки.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HabitInput'
+      responses:
+        '200':
+          description: Привычка создана.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Habit'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /habits/{habitId}:
+    parameters:
+      - name: habitId
+        in: path
+        required: true
+        description: Идентификатор привычки.
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - habits
+      operationId: getHabit
+      summary: Привычка по идентификатору
+      description: Возвращает одну привычку владельца. Чужая привычка недоступна.
+      responses:
+        '200':
+          description: Привычка найдена.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Habit'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - habits
+      operationId: updateHabit
+      summary: Обновление привычки
+      description: |
+        Заменяет поля привычки значениями из `HabitInput`. Идентификатор,
+        владелец и `createdAt` не изменяются. Чужая привычка недоступна.
+      requestBody:
+        required: true
+        description: Новые значения полей привычки.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HabitInput'
+      responses:
+        '200':
+          description: Привычка обновлена.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Habit'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+        - habits
+      operationId: deleteHabit
+      summary: Удаление привычки
+      description: |
+        Удаляет привычку владельца. Повторное обращение к тому же
+        идентификатору даёт 404. Чужая привычка недоступна.
+      responses:
+        '200':
+          description: Привычка удалена, тело ответа пустое.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Статический Bearer-токен для демонстрации: `demo-token` или
+        `other-token`. Токен передаётся в заголовке в виде
+        `Authorization: Bearer <token>`.
+
+  responses:
+    Unauthorized:
+      description: Токен отсутствует, не соответствует схеме Bearer или неизвестен сервису.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Привычка принадлежит другому владельцу.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Привычка с таким идентификатором не существует.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Habit:
+      type: object
+      description: Привычка, сохранённая в сервисе.
+      required:
+        - id
+        - title
+        - active
+        - ownerId
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+          description: Идентификатор привычки, присваивается сервисом.
+          example: 3f1c1a5e-8f2b-4c7a-9d31-6f0c1f2a7b10
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: Короткое название привычки.
+          example: Читать 20 минут
+        description:
+          type: string
+          maxLength: 500
+          description: Произвольное описание привычки.
+          example: Художественная литература перед сном
+        active:
+          type: boolean
+          description: Признак того, что привычка сейчас отслеживается.
+          example: true
+        ownerId:
+          type: string
+          readOnly: true
+          description: Владелец привычки, определяется предъявленным токеном.
+          example: demo-user
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Момент создания привычки.
+          example: '2024-05-01T10:15:30Z'
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Момент последнего изменения привычки.
+          example: '2024-05-02T08:00:00Z'
+
+    HabitInput:
+      type: object
+      description: Данные, которые клиент передаёт при создании и обновлении привычки.
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: Короткое название привычки.
+          example: Читать 20 минут
+        description:
+          type: string
+          maxLength: 500
+          description: Произвольное описание привычки.
+          example: Художественная литература перед сном
+        active:
+          type: boolean
+          default: true
+          description: Признак того, что привычка отслеживается; по умолчанию `true`.
+          example: true
+
+    HabitListResponse:
+      type: object
+      description: Коллекция привычек вместе с их количеством.
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          description: Привычки, удовлетворяющие фильтру запроса.
+          items:
+            $ref: '#/components/schemas/Habit'
+        total:
+          type: integer
+          minimum: 0
+          description: Количество привычек в `items`.
+          example: 2
+
+    Error:
+      type: object
+      description: Тело ответа при ошибке.
+      required:
+        - status
+        - message
+      properties:
+        status:
+          type: integer
+          description: HTTP-код ответа, продублированный в теле.
+          example: 404
+        message:
+          type: string
+          minLength: 1
+          description: Понятное человеку объяснение ошибки.
+          example: Habit with id 3f1c1a5e-8f2b-4c7a-9d31-6f0c1f2a7b10 not found
